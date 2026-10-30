@@ -36,6 +36,8 @@ float g_Time;
 float g_TimeLast;
 float g_Daytime;
 
+volatile std::sig_atomic_t WallpaperApplication::s_pendingSignal;
+
 using namespace WallpaperEngine::Assets;
 using namespace WallpaperEngine::Application;
 using namespace WallpaperEngine::Data::Model;
@@ -965,6 +967,12 @@ void WallpaperApplication::show () {
     setup ();
     while (this->m_context.state.general.keepRunning) {
 	render ();
+	// the handler only records the signal; logging and the keepRunning update
+	// happen here, in the main loop, where sLog is safe to call
+	if (const int pending = consumePendingSignal ()) {
+	    sLog.out ("Stop requested by signal ", pending);
+	    this->m_context.state.general.keepRunning = false;
+	}
     }
     cleanup ();
 }
@@ -975,8 +983,15 @@ void WallpaperApplication::update (Render::Drivers::Output::OutputViewport* view
 }
 
 void WallpaperApplication::signal (int signal) {
-    sLog.out ("Stop requested by signal ", signal);
-    this->m_context.state.general.keepRunning = false;
+    // this is called from the signal handler, so it must be async-signal-safe:
+    // the flag is only read by the main loop, which is where sLog lives
+    s_pendingSignal = signal;
+}
+
+int WallpaperApplication::consumePendingSignal () {
+    const int pending = s_pendingSignal;
+    s_pendingSignal = 0;
+    return pending;
 }
 
 const std::map<std::string, ProjectUniquePtr>& WallpaperApplication::getBackgrounds () const {

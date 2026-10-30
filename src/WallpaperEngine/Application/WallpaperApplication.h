@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <csignal>
 #include <random>
 
 #include "WallpaperEngine/Application/ApplicationContext.h"
@@ -50,11 +51,22 @@ public:
      */
     void show ();
     /**
-     * Handles a OS signal sent to this PID
+     * Records that an OS signal asked us to stop.
+     *
+     * Async-signal-safe by construction: it does nothing but store the signal
+     * number into a sig_atomic_t, so it is safe to call straight from a signal
+     * handler. The flag is drained by show () on the main loop, which is where
+     * the logging and the keepRunning update actually happen.
      *
      * @param signal
      */
-    void signal (int signal);
+    static void signal (int signal);
+    /**
+     * Returns the pending stop signal recorded by signal () and clears it.
+     *
+     * @return the signal number, or 0 when no stop was requested
+     */
+    static int consumePendingSignal ();
     /**
      * @return Maps screens to loaded backgrounds
      */
@@ -82,6 +94,12 @@ public:
     [[nodiscard]] GLuint getDestinationFramebuffer () const;
 
 private:
+    /**
+     * Stop signal recorded by signal (), drained by show (). Written from a
+     * signal handler, hence sig_atomic_t rather than bool.
+     */
+    static volatile std::sig_atomic_t s_pendingSignal;
+
     /**
      * Sets up an asset locator for the given background
      *
